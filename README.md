@@ -149,12 +149,32 @@ portless --version               # Show version
 
 Portless stores its state (routes, PID file, port file) in a directory that depends on the proxy port:
 
-- **Port < 1024** (sudo required): `/tmp/portless` -- shared between root and user processes
-- **Port >= 1024** (no sudo): `~/.portless` -- user-scoped, no root involvement
+- **Unix (macOS/Linux), Port < 1024** (sudo required): `/tmp/portless` -- shared between root and user processes
+- **Unix (macOS/Linux), Port >= 1024** (no sudo): `~/.portless` -- user-scoped, no root involvement
+- **Windows**: `%TEMP%\portless` or `%USERPROFILE%\.portless` (same logic applies)
 
 Override with the `PORTLESS_STATE_DIR` environment variable if needed.
 
 ## Requirements
 
 - Node.js 20+
-- macOS or Linux
+- macOS, Linux, or Windows 10/11
+
+## Platform Notes
+
+### Windows
+
+- **No sudo required**: Windows doesn't enforce privileged port restrictions like Unix systems. Port 80 can be used without Administrator privileges in most cases.
+- **Command prompt differences**: Where Unix uses `sudo`, Windows uses "Run as Administrator". Where Unix uses `lsof`, Windows uses `netstat -ano`. Where Unix uses `kill`, Windows uses `taskkill /PID <pid> /F`.
+- **Certificate trust**: The `portless trust` command uses `certutil` to add the CA to the Windows certificate store. This may prompt for Administrator access.
+- **.localhost domains**: Modern browsers (Chrome, Edge, Firefox) on Windows 10/11 natively resolve `.localhost` domains to 127.0.0.1.
+
+### macOS
+
+- **HTTPS certificate trust**: The `portless trust` command adds the CA to your login keychain. No sudo required -- the OS shows a GUI authorization prompt.
+- **.localhost domains**: `.localhost` domains auto-resolve to 127.0.0.1 on modern macOS.
+
+### Linux
+
+- **HTTPS certificate trust**: The `portless trust` command requires sudo to copy the CA to `/usr/local/share/ca-certificates/` and run `update-ca-certificates`.
+- **.localhost domains**: `.localhost` domains auto-resolve to 127.0.0.1 on modern Linux distributions.
