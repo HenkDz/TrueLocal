@@ -224,8 +224,8 @@ describe("createProxyServer", () => {
     });
   });
 
-  describe("X-Portless header", () => {
-    it("includes X-Portless header on 404 responses", async () => {
+  describe("X-trulocal header", () => {
+    it("includes X-trulocal header on 404 responses", async () => {
       const routes: RouteInfo[] = [];
       const server = trackServer(
         createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
@@ -236,7 +236,7 @@ describe("createProxyServer", () => {
       expect(res.headers[PORTLESS_HEADER.toLowerCase()]).toBe("1");
     });
 
-    it("includes X-Portless header on 400 responses", async () => {
+    it("includes X-trulocal header on 400 responses", async () => {
       const routes: RouteInfo[] = [];
       const server = trackServer(
         createProxyServer({ getRoutes: () => routes, proxyPort: TEST_PROXY_PORT })
@@ -436,7 +436,7 @@ describe("createProxyServer with TLS (HTTP/2)", () => {
   }
 
   beforeAll(() => {
-    certDir = fs.mkdtempSync(path.join(os.tmpdir(), "portless-proxy-test-"));
+    certDir = fs.mkdtempSync(path.join(os.tmpdir(), "trulocal-proxy-test-"));
     const certs = ensureCerts(certDir);
     tlsCert = fs.readFileSync(certs.certPath);
     tlsKey = fs.readFileSync(certs.keyPath);
@@ -506,7 +506,7 @@ describe("createProxyServer with TLS (HTTP/2)", () => {
     expect(res.body).toContain("Not Found");
   });
 
-  it("includes X-Portless header on TLS responses", async () => {
+  it("includes X-trulocal header on TLS responses", async () => {
     const routes: RouteInfo[] = [];
     const server = trackServer(
       createProxyServer({

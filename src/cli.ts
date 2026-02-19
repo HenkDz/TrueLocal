@@ -127,19 +127,19 @@ function startProxyServer(
     if (err.code === "EADDRINUSE") {
       console.error(chalk.red(`Port ${proxyPort} is already in use.`));
       console.error(chalk.blue("Stop the existing proxy first:"));
-      console.error(chalk.cyan("  portless proxy stop"));
+      console.error(chalk.cyan("  trulocal proxy stop"));
       console.error(chalk.blue("Or check what is using the port:"));
       console.error(chalk.cyan(`  ${getPortCheckCommand(proxyPort)}`));
     } else if (err.code === "EACCES") {
       console.error(chalk.red(`Permission denied for port ${proxyPort}.`));
       if (isWindows) {
         console.error(chalk.blue("Either run as Administrator or use a non-privileged port:"));
-        console.error(chalk.cyan("  portless proxy start"));
+        console.error(chalk.cyan("  trulocal proxy start"));
       } else {
         console.error(chalk.blue("Either run with sudo:"));
-        console.error(chalk.cyan("  sudo portless proxy start -p 80"));
+        console.error(chalk.cyan("  sudo trulocal proxy start -p 80"));
         console.error(chalk.blue("Or use a non-privileged port (no sudo needed):"));
-        console.error(chalk.cyan("  portless proxy start"));
+        console.error(chalk.cyan("  trulocal proxy start"));
       }
     } else {
       console.error(chalk.red(`Proxy error: ${err.message}`));
@@ -220,11 +220,11 @@ async function stopProxy(store: RouteStore, proxyPort: number, tls: boolean): Pr
               );
               console.error(chalk.blue("Stop it with:"));
               console.error(chalk.cyan("  Run Command Prompt as Administrator"));
-              console.error(chalk.cyan("  portless proxy stop"));
+              console.error(chalk.cyan("  trulocal proxy stop"));
             } else {
               console.error(chalk.red("Permission denied. The proxy was started with sudo."));
               console.error(chalk.blue("Stop it with:"));
-              console.error(chalk.cyan("  sudo portless proxy stop"));
+              console.error(chalk.cyan("  sudo trulocal proxy stop"));
             }
           } else {
             const message = err instanceof Error ? err.message : String(err);
@@ -237,7 +237,7 @@ async function stopProxy(store: RouteStore, proxyPort: number, tls: boolean): Pr
         // Not running as root on Unix -- lsof likely cannot see root-owned processes
         console.error(chalk.red("Cannot identify the process. It may be running as root."));
         console.error(chalk.blue("Try stopping with sudo:"));
-        console.error(chalk.cyan("  sudo portless proxy stop"));
+        console.error(chalk.cyan("  sudo trulocal proxy stop"));
       } else {
         console.error(chalk.red(`Could not identify the process on port ${proxyPort}.`));
         console.error(chalk.blue("Try manually:"));
@@ -305,11 +305,11 @@ async function stopProxy(store: RouteStore, proxyPort: number, tls: boolean): Pr
         console.error(chalk.red("Permission denied. The proxy may be running as Administrator."));
         console.error(chalk.blue("Stop it with:"));
         console.error(chalk.cyan("  Run Command Prompt as Administrator"));
-        console.error(chalk.cyan("  portless proxy stop"));
+        console.error(chalk.cyan("  trulocal proxy stop"));
       } else {
         console.error(chalk.red("Permission denied. The proxy was started with sudo."));
         console.error(chalk.blue("Stop it with:"));
-        console.error(chalk.cyan(`  ${sudoHint}portless proxy stop`));
+        console.error(chalk.cyan(`  ${sudoHint}trulocal proxy stop`));
       }
     } else {
       const message = err instanceof Error ? err.message : String(err);
@@ -325,7 +325,7 @@ function listRoutes(store: RouteStore, proxyPort: number, tls: boolean): void {
 
   if (routes.length === 0) {
     console.log(chalk.yellow("No active routes."));
-    console.log(chalk.gray("Start an app with: portless <name> <command>"));
+    console.log(chalk.gray("Start an app with: trulocal <name> <command>"));
     return;
   }
 
@@ -363,9 +363,9 @@ async function runApp(
       if (!process.stdin.isTTY) {
         console.error(chalk.red("Proxy is not running."));
         console.error(chalk.blue("Start the proxy first (requires sudo for this port):"));
-        console.error(chalk.cyan("  sudo portless proxy start -p 80"));
+        console.error(chalk.cyan("  sudo trulocal proxy start -p 80"));
         console.error(chalk.blue("Or use the default port (no sudo needed):"));
-        console.error(chalk.cyan("  portless proxy start"));
+        console.error(chalk.cyan("  trulocal proxy start"));
         process.exit(1);
       }
 
@@ -392,7 +392,7 @@ async function runApp(
       if (result.status !== 0) {
         console.error(chalk.red("Failed to start proxy."));
         console.error(chalk.blue("Try starting it manually:"));
-        console.error(chalk.cyan("  sudo portless proxy start"));
+        console.error(chalk.cyan("  sudo trulocal proxy start"));
         process.exit(1);
       }
     } else {
@@ -407,7 +407,7 @@ async function runApp(
       if (result.status !== 0) {
         console.error(chalk.red("Failed to start proxy."));
         console.error(chalk.blue("Try starting it manually:"));
-        console.error(chalk.cyan("  portless proxy start"));
+        console.error(chalk.cyan("  trulocal proxy start"));
         process.exit(1);
       }
     }
@@ -420,7 +420,7 @@ async function runApp(
       console.error(chalk.red("Proxy failed to start (timed out waiting for it to listen)."));
       const logPath = path.join(stateDir, "proxy.log");
       console.error(chalk.blue("Try starting the proxy manually to see the error:"));
-      console.error(chalk.cyan(`  ${needsSudo ? "sudo " : ""}portless proxy start`));
+      console.error(chalk.cyan(`  ${needsSudo ? "sudo " : ""}trulocal proxy start`));
       if (fs.existsSync(logPath)) {
         console.error(chalk.gray(`Logs: ${logPath}`));
       }
@@ -466,20 +466,21 @@ async function runApp(
 async function main() {
   const args = process.argv.slice(2);
 
-  // Block npx / pnpm dlx -- portless should be installed globally, not run
+  // Block npx / pnpm dlx -- trulocal should be installed globally, not run
   // via npx. Running "sudo npx" is unsafe because it performs package
   // resolution and downloads as root.
   const isNpx = process.env.npm_command === "exec" && !process.env.npm_lifecycle_event;
   const isPnpmDlx = !!process.env.PNPM_SCRIPT_SRC_DIR && !process.env.npm_lifecycle_event;
   if (isNpx || isPnpmDlx) {
-    console.error(chalk.red("Error: portless should not be run via npx or pnpm dlx."));
+    console.error(chalk.red("Error: trulocal should not be run via npx or pnpm dlx."));
     console.error(chalk.blue("Install globally instead:"));
-    console.error(chalk.cyan("  npm install -g portless"));
+    console.error(chalk.cyan("  npm install -g trulocal"));
     process.exit(1);
   }
 
-  // Skip portless if PORTLESS=0 or PORTLESS=skip
-  const skipPortless = process.env.PORTLESS === "0" || process.env.PORTLESS === "skip";
+  // Skip trulocal if TRUELOCAL=0|skip (or legacy PORTLESS=0|skip)
+  const skipEnv = process.env.TRUELOCAL ?? process.env.PORTLESS;
+  const skipPortless = skipEnv === "0" || skipEnv === "skip";
   if (skipPortless && args.length >= 2 && args[0] !== "proxy") {
     // Just run the command directly, skipping the first arg (the name)
     spawnCommand(args.slice(1));
@@ -488,67 +489,80 @@ async function main() {
 
   // Help
   if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
+    const defaultPort = getDefaultPort();
+    const defaultUrl = formatUrl("myapp.localhost", defaultPort, false);
+    const defaultApiUrl = formatUrl("api.myapp.localhost", defaultPort, false);
+    const lowPortHint =
+      process.platform === "win32"
+        ? "  trulocal proxy start -p 80       Start on port 80"
+        : "  trulocal proxy start -p 80       Start on port 80 (requires sudo)";
+    const lowPortOptionHint =
+      process.platform === "win32"
+        ? "                                On Windows, low ports are typically allowed"
+        : "                                Ports < 1024 require sudo";
+
     console.log(`
-${chalk.bold("portless")} - Replace port numbers with stable, named .localhost URLs. For humans and agents.
+${chalk.bold("trulocal")} - Replace port numbers with stable, named .localhost URLs. For humans and agents.
 
 Eliminates port conflicts, memorizing port numbers, and cookie/storage
 clashes by giving each dev server a stable .localhost URL.
 
 ${chalk.bold("Install:")}
-  ${chalk.cyan("npm install -g portless")}
-  Do NOT add portless as a project dependency.
+  ${chalk.cyan("npm install -g trulocal")}
+  Do NOT add trulocal as a project dependency.
 
 ${chalk.bold("Usage:")}
-  ${chalk.cyan("portless proxy start")}             Start the proxy (background daemon)
-  ${chalk.cyan("portless proxy start --https")}     Start with HTTP/2 + TLS (auto-generates certs)
-  ${chalk.cyan("portless proxy start -p 80")}       Start on port 80 (requires sudo)
-  ${chalk.cyan("portless proxy stop")}              Stop the proxy
-  ${chalk.cyan("portless <name> <cmd>")}            Run your app through the proxy
-  ${chalk.cyan("portless list")}                    Show active routes
-  ${chalk.cyan("portless trust")}                   Add local CA to system trust store
+  ${chalk.cyan("trulocal proxy start")}             Start the proxy (background daemon)
+  ${chalk.cyan("trulocal proxy start --https")}     Start with HTTP/2 + TLS (auto-generates certs)
+  ${chalk.cyan(lowPortHint)}
+  ${chalk.cyan("trulocal proxy stop")}              Stop the proxy
+  ${chalk.cyan("trulocal <name> <cmd>")}            Run your app through the proxy
+  ${chalk.cyan("trulocal list")}                    Show active routes
+  ${chalk.cyan("trulocal trust")}                   Add local CA to system trust store
 
 ${chalk.bold("Examples:")}
-  portless proxy start                # Start proxy on port 1355
-  portless proxy start --https        # Start with HTTPS/2 (faster page loads)
-  portless myapp next dev             # -> http://myapp.localhost:1355
-  portless api.myapp pnpm start       # -> http://api.myapp.localhost:1355
+  trulocal proxy start                # Start proxy on port ${defaultPort}
+  trulocal proxy start --https        # Start with HTTPS/2 (faster page loads)
+  trulocal myapp next dev             # -> ${defaultUrl}
+  trulocal api.myapp pnpm start       # -> ${defaultApiUrl}
 
 ${chalk.bold("In package.json:")}
   {
     "scripts": {
-      "dev": "portless myapp next dev"
+      "dev": "trulocal myapp next dev"
     }
   }
 
 ${chalk.bold("How it works:")}
-  1. Start the proxy once (listens on port 1355 by default, no sudo needed)
+  1. Start the proxy once (listens on port ${defaultPort} by default)
   2. Run your apps - they auto-start the proxy and register automatically
-  3. Access via http://<name>.localhost:1355
+  3. Access via ${formatUrl("<name>.localhost", defaultPort, false)}
   4. .localhost domains auto-resolve to 127.0.0.1
 
 ${chalk.bold("HTTP/2 + HTTPS:")}
   Use --https for HTTP/2 multiplexing (faster dev server page loads).
-  On first use, portless generates a local CA and adds it to your
+  On first use, trulocal generates a local CA and adds it to your
   system trust store. No browser warnings. No sudo required on macOS.
 
 ${chalk.bold("Options:")}
-  -p, --port <number>           Port for the proxy to listen on (default: 1355)
-                                Ports < 1024 require sudo
+  -p, --port <number>           Port for the proxy to listen on (default: ${defaultPort})
+${lowPortOptionHint}
   --https                       Enable HTTP/2 + TLS with auto-generated certs
   --cert <path>                 Use a custom TLS certificate (implies --https)
   --key <path>                  Use a custom TLS private key (implies --https)
-  --no-tls                      Disable HTTPS (overrides PORTLESS_HTTPS)
+  --no-tls                      Disable HTTPS (overrides TRUELOCAL_HTTPS)
   --foreground                  Run proxy in foreground (for debugging)
 
 ${chalk.bold("Environment variables:")}
-  PORTLESS_PORT=<number>        Override the default proxy port (e.g. in .bashrc)
-  PORTLESS_HTTPS=1              Always enable HTTPS (set in .bashrc / .zshrc)
-  PORTLESS_STATE_DIR=<path>     Override the state directory
-  PORTLESS=0 | PORTLESS=skip    Run command directly without proxy
+  TRUELOCAL_PORT=<number>       Override the default proxy port (preferred)
+  TRUELOCAL_HTTPS=1             Always enable HTTPS (preferred)
+  TRUELOCAL_STATE_DIR=<path>    Override the state directory (preferred)
+  TRUELOCAL=0 | TRUELOCAL=skip  Run command directly without proxy
+  PORTLESS_*                    Legacy env vars still supported
 
-${chalk.bold("Skip portless:")}
-  PORTLESS=0 pnpm dev           # Runs command directly without proxy
-  PORTLESS=skip pnpm dev        # Same as above
+${chalk.bold("Skip trulocal:")}
+  TRUELOCAL=0 pnpm dev          # Runs command directly without proxy
+  TRUELOCAL=skip pnpm dev       # Same as above
 `);
     process.exit(0);
   }
@@ -564,17 +578,17 @@ ${chalk.bold("Skip portless:")}
     const result = trustCA(dir);
     if (result.trusted) {
       console.log(chalk.green("Local CA added to system trust store."));
-      console.log(chalk.gray("Browsers will now trust portless HTTPS certificates."));
+      console.log(chalk.gray("Browsers will now trust trulocal HTTPS certificates."));
     } else {
       console.error(chalk.red(`Failed to trust CA: ${result.error}`));
       if (result.error?.includes("sudo") || result.error?.includes("Administrator")) {
         if (isWindows) {
           console.error(chalk.blue("Run as Administrator:"));
           console.error(chalk.cyan("  Open Command Prompt as Administrator"));
-          console.error(chalk.cyan("  portless trust"));
+          console.error(chalk.cyan("  trulocal trust"));
         } else {
           console.error(chalk.blue("Run with sudo:"));
-          console.error(chalk.cyan("  sudo portless trust"));
+          console.error(chalk.cyan("  sudo trulocal trust"));
         }
       }
       process.exit(1);
@@ -604,15 +618,19 @@ ${chalk.bold("Skip portless:")}
     }
 
     if (args[1] !== "start") {
-      // Bare "portless proxy" or unknown subcommand -- show usage hint
+      const lowPortProxyHint =
+        process.platform === "win32"
+          ? "  trulocal proxy start -p 80" + "          Start on port 80"
+          : "  trulocal proxy start -p 80" + "          Start on port 80 (requires sudo)";
+      // Bare "trulocal proxy" or unknown subcommand -- show usage hint
       console.log(`
-${chalk.bold("Usage: portless proxy <command>")}
+${chalk.bold("Usage: trulocal proxy <command>")}
 
-  ${chalk.cyan("portless proxy start")}                Start the proxy (daemon)
-  ${chalk.cyan("portless proxy start --https")}        Start with HTTP/2 + TLS
-  ${chalk.cyan("portless proxy start --foreground")}   Start in foreground (for debugging)
-  ${chalk.cyan("portless proxy start -p 80")}          Start on port 80 (requires sudo)
-  ${chalk.cyan("portless proxy stop")}                 Stop the proxy
+  ${chalk.cyan("trulocal proxy start")}                Start the proxy (daemon)
+  ${chalk.cyan("trulocal proxy start --https")}        Start with HTTP/2 + TLS
+  ${chalk.cyan("trulocal proxy start --foreground")}   Start in foreground (for debugging)
+  ${chalk.cyan(lowPortProxyHint)}
+  ${chalk.cyan("trulocal proxy stop")}                 Stop the proxy
 `);
       process.exit(args[1] ? 1 : 0);
     }
@@ -628,7 +646,7 @@ ${chalk.bold("Usage: portless proxy <command>")}
       if (!portValue || portValue.startsWith("-")) {
         console.error(chalk.red("Error: --port / -p requires a port number."));
         console.error(chalk.blue("Usage:"));
-        console.error(chalk.cyan("  portless proxy start -p 8080"));
+        console.error(chalk.cyan("  trulocal proxy start -p 8080"));
         process.exit(1);
       }
       proxyPort = parseInt(portValue, 10);
@@ -688,7 +706,7 @@ ${chalk.bold("Usage: portless proxy <command>")}
       const sudoPrefix = needsSudo ? "sudo " : "";
       console.log(chalk.yellow(`Proxy is already running on port ${proxyPort}.`));
       console.log(
-        chalk.blue(`To restart: portless proxy stop && ${sudoPrefix}portless proxy start`)
+        chalk.blue(`To restart: trulocal proxy stop && ${sudoPrefix}trulocal proxy start`)
       );
       return;
     }
@@ -697,9 +715,9 @@ ${chalk.bold("Usage: portless proxy <command>")}
     if (!isWindows && proxyPort < PRIVILEGED_PORT_THRESHOLD && (process.getuid?.() ?? -1) !== 0) {
       console.error(chalk.red(`Error: Port ${proxyPort} requires sudo.`));
       console.error(chalk.blue("Either run with sudo:"));
-      console.error(chalk.cyan("  sudo portless proxy start -p 80"));
+      console.error(chalk.cyan("  sudo trulocal proxy start -p 80"));
       console.error(chalk.blue("Or use the default port (no sudo needed):"));
-      console.error(chalk.cyan("  portless proxy start"));
+      console.error(chalk.cyan("  trulocal proxy start"));
       process.exit(1);
     }
 
@@ -749,7 +767,7 @@ ${chalk.bold("Usage: portless proxy <command>")}
           const trustResult = trustCA(stateDir);
           if (trustResult.trusted) {
             console.log(
-              chalk.green("CA added to system trust store. Browsers will trust portless certs.")
+              chalk.green("CA added to system trust store. Browsers will trust trulocal certs.")
             );
           } else {
             console.warn(chalk.yellow("Could not add CA to system trust store."));
@@ -759,7 +777,7 @@ ${chalk.bold("Usage: portless proxy <command>")}
             console.warn(
               chalk.yellow("Browsers will show certificate warnings. To fix this later, run:")
             );
-            console.warn(chalk.cyan("  portless trust"));
+            console.warn(chalk.cyan("  trulocal trust"));
           }
         }
 
@@ -808,7 +826,7 @@ ${chalk.bold("Usage: portless proxy <command>")}
         stdio: ["ignore", logFd, logFd],
         env: process.env,
         // On Windows, hide the console window for background daemon
-        ...(process.platform === "win32" ? { windowsHide: true, shell: true } : {}),
+        ...(process.platform === "win32" ? { windowsHide: true } : {}),
       });
       child.unref();
     } finally {
@@ -820,7 +838,7 @@ ${chalk.bold("Usage: portless proxy <command>")}
       console.error(chalk.red("Proxy failed to start (timed out waiting for it to listen)."));
       console.error(chalk.blue("Try starting the proxy in the foreground to see the error:"));
       const needsSudo = proxyPort < PRIVILEGED_PORT_THRESHOLD;
-      console.error(chalk.cyan(`  ${needsSudo ? "sudo " : ""}portless proxy start --foreground`));
+      console.error(chalk.cyan(`  ${needsSudo ? "sudo " : ""}trulocal proxy start --foreground`));
       if (fs.existsSync(logPath)) {
         console.error(chalk.gray(`Logs: ${logPath}`));
       }
@@ -839,9 +857,9 @@ ${chalk.bold("Usage: portless proxy <command>")}
   if (commandArgs.length === 0) {
     console.error(chalk.red("Error: No command provided."));
     console.error(chalk.blue("Usage:"));
-    console.error(chalk.cyan("  portless <name> <command...>"));
+    console.error(chalk.cyan("  trulocal <name> <command...>"));
     console.error(chalk.blue("Example:"));
-    console.error(chalk.cyan("  portless myapp next dev"));
+    console.error(chalk.cyan("  trulocal myapp next dev"));
     process.exit(1);
   }
 

@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import * as http from "node:http";
 import * as net from "node:net";
 import * as os from "node:os";
+import * as path from "node:path";
 import {
   DEFAULT_PROXY_PORT,
   PRIVILEGED_PORT_THRESHOLD,
@@ -67,9 +68,9 @@ describe("isProxyRunning", () => {
     expect(result).toBe(false);
   });
 
-  it("returns true when a portless proxy is listening", async () => {
+  it("returns true when a trulocal proxy is listening", async () => {
     const server = http.createServer((_req, res) => {
-      res.setHeader("X-Portless", "1");
+      res.setHeader("X-trulocal", "1");
       res.end("ok");
     });
     servers.push(server);
@@ -87,9 +88,9 @@ describe("isProxyRunning", () => {
     expect(result).toBe(true);
   });
 
-  it("returns false when a non-portless server is listening", async () => {
+  it("returns false when a non-trulocal server is listening", async () => {
     const server = http.createServer((_req, res) => {
-      res.end("not portless");
+      res.end("not trulocal");
     });
     servers.push(server);
 
@@ -122,20 +123,23 @@ describe("resolveStateDir", () => {
 });
 
 describe("constants", () => {
-  it("DEFAULT_PROXY_PORT is 1355", () => {
-    expect(DEFAULT_PROXY_PORT).toBe(1355);
+  it("DEFAULT_PROXY_PORT matches platform default", () => {
+    const expected = process.platform === "win32" ? 80 : 1355;
+    expect(DEFAULT_PROXY_PORT).toBe(expected);
   });
 
   it("PRIVILEGED_PORT_THRESHOLD is 1024", () => {
     expect(PRIVILEGED_PORT_THRESHOLD).toBe(1024);
   });
 
-  it("SYSTEM_STATE_DIR is /tmp/portless", () => {
-    expect(SYSTEM_STATE_DIR).toBe("/tmp/portless");
+  it("SYSTEM_STATE_DIR matches platform path", () => {
+    const expected =
+      process.platform === "win32" ? path.join(os.tmpdir(), "trulocal") : "/tmp/trulocal";
+    expect(SYSTEM_STATE_DIR).toBe(expected);
   });
 
   it("USER_STATE_DIR is in home directory", () => {
-    expect(USER_STATE_DIR).toBe(`${os.homedir()}/.portless`);
+    expect(USER_STATE_DIR).toBe(path.join(os.homedir(), ".trulocal"));
   });
 });
 

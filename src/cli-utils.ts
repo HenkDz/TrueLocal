@@ -12,18 +12,29 @@ import { PORTLESS_HEADER } from "./proxy.js";
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Default proxy port. Uses an unprivileged port so sudo is not required. */
-export const DEFAULT_PROXY_PORT = 1355;
+/**
+ * Default proxy port.
+ * - Windows: 80 (no privileged-port restriction on modern Windows)
+ * - macOS/Linux: 1355 (no sudo required)
+ */
+export const DEFAULT_PROXY_PORT = process.platform === "win32" ? 80 : 1355;
 
 /** Ports below this threshold require root/sudo to bind. */
 export const PRIVILEGED_PORT_THRESHOLD = 1024;
 
 /** System-wide state directory (used when proxy needs sudo). */
 export const SYSTEM_STATE_DIR =
-  process.platform === "win32" ? path.join(os.tmpdir(), "portless") : "/tmp/portless";
+  process.platform === "win32" ? path.join(os.tmpdir(), "trulocal") : "/tmp/trulocal";
 
 /** Per-user state directory (used when proxy runs without sudo). */
-export const USER_STATE_DIR = path.join(os.homedir(), ".portless");
+export const USER_STATE_DIR = path.join(os.homedir(), ".trulocal");
+
+/** Legacy system state dir used by portless. */
+const LEGACY_SYSTEM_STATE_DIR =
+  process.platform === "win32" ? path.join(os.tmpdir(), "portless") : "/tmp/portless";
+
+/** Legacy user state dir used by portless. */
+const LEGACY_USER_STATE_DIR = path.join(os.homedir(), ".portless");
 
 /** Minimum app port when finding a free port. */
 const MIN_APP_PORT = 4000;
@@ -56,16 +67,31 @@ export const SIGNAL_CODES: Record<string, number> = {
   SIGTERM: 15,
 };
 
+/** Windows script extensions that require cmd.exe to execute. */
+const WINDOWS_CMD_SCRIPT_EXTENSIONS = new Set([".cmd", ".bat"]);
+
+/** Native Windows binaries that can run directly with spawn(). */
+const WINDOWS_NATIVE_EXECUTABLE_EXTENSIONS = new Set([".exe", ".com"]);
+
+function readFirstEnv(names: string[]): string | undefined {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value !== undefined && value !== "") return value;
+  }
+  return undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Port configuration
 // ---------------------------------------------------------------------------
 
 /**
- * Return the effective default proxy port. Reads the PORTLESS_PORT env var
+ * Return the effective default proxy port. Reads TRUELOCAL_PORT first,
+ * then legacy PORTLESS_PORT.
  * first, falling back to DEFAULT_PROXY_PORT (1355).
  */
 export function getDefaultPort(): number {
-  const envPort = process.env.PORTLESS_PORT;
+  const envPort = readFirstEnv(["TRUELOCAL_PORT", "PORTLESS_PORT"]);
   if (envPort) {
     const port = parseInt(envPort, 10);
     if (!isNaN(port) && port >= 1 && port <= 65535) return port;
@@ -79,12 +105,13 @@ export function getDefaultPort(): number {
 
 /**
  * Determine the state directory for a given proxy port.
- * Privileged ports (< 1024) use the system dir (/tmp/portless) so both
+ * Privileged ports (< 1024) use the system dir so both
  * root and non-root processes can share state.  Unprivileged ports use
- * the user's home directory (~/.portless).
+ * the user's home directory.
  */
 export function resolveStateDir(port: number): string {
-  if (process.env.PORTLESS_STATE_DIR) return process.env.PORTLESS_STATE_DIR;
+  const envDir = readFirstEnv(["TRUELOCAL_STATE_DIR", "PORTLESS_STATE_DIR"]);
+  if (envDir) return envDir;
   return port < PRIVILEGED_PORT_THRESHOLD ? SYSTEM_STATE_DIR : USER_STATE_DIR;
 }
 
@@ -126,10 +153,11 @@ export function writeTlsMarker(dir: string, enabled: boolean): void {
 }
 
 /**
- * Return whether HTTPS mode is requested via the PORTLESS_HTTPS env var.
+ * Return whether HTTPS mode is requested via TRUELOCAL_HTTPS (or legacy
+ * PORTLESS_HTTPS) env vars.
  */
 export function isHttpsEnvEnabled(): boolean {
-  const val = process.env.PORTLESS_HTTPS;
+  const val = readFirstEnv(["TRUELOCAL_HTTPS", "PORTLESS_HTTPS"]);
   return val === "1" || val === "true";
 }
 
@@ -140,28 +168,33 @@ export function isHttpsEnvEnabled(): boolean {
  */
 export async function discoverState(): Promise<{ dir: string; port: number; tls: boolean }> {
   // Env var override
-  if (process.env.PORTLESS_STATE_DIR) {
-    const dir = process.env.PORTLESS_STATE_DIR;
+  const envDir = readFirstEnv(["TRUELOCAL_STATE_DIR", "PORTLESS_STATE_DIR"]);
+  if (envDir) {
+    const dir = envDir;
     const port = readPortFromDir(dir) ?? getDefaultPort();
     const tls = readTlsMarker(dir);
     return { dir, port, tls };
   }
 
-  // Check user-level state first (~/.portless)
-  const userPort = readPortFromDir(USER_STATE_DIR);
-  if (userPort !== null) {
-    const tls = readTlsMarker(USER_STATE_DIR);
-    if (await isProxyRunning(userPort, tls)) {
-      return { dir: USER_STATE_DIR, port: userPort, tls };
+  // Check preferred then legacy user-level state directories.
+  for (const dir of [USER_STATE_DIR, LEGACY_USER_STATE_DIR]) {
+    const userPort = readPortFromDir(dir);
+    if (userPort !== null) {
+      const tls = readTlsMarker(dir);
+      if (await isProxyRunning(userPort, tls)) {
+        return { dir, port: userPort, tls };
+      }
     }
   }
 
-  // Check system-level state (/tmp/portless)
-  const systemPort = readPortFromDir(SYSTEM_STATE_DIR);
-  if (systemPort !== null) {
-    const tls = readTlsMarker(SYSTEM_STATE_DIR);
-    if (await isProxyRunning(systemPort, tls)) {
-      return { dir: SYSTEM_STATE_DIR, port: systemPort, tls };
+  // Check preferred then legacy system-level state directories.
+  for (const dir of [SYSTEM_STATE_DIR, LEGACY_SYSTEM_STATE_DIR]) {
+    const systemPort = readPortFromDir(dir);
+    if (systemPort !== null) {
+      const tls = readTlsMarker(dir);
+      if (await isProxyRunning(systemPort, tls)) {
+        return { dir, port: systemPort, tls };
+      }
     }
   }
 
@@ -310,6 +343,85 @@ export async function waitForProxy(
   return false;
 }
 
+/** Quote one argument for cmd.exe /c execution. */
+function quoteForWindowsCmd(arg: string): string {
+  if (arg.length === 0) return '""';
+  const needsQuotes = /[\s"&()<>|^%]/.test(arg);
+  let escaped = arg.replace(/"/g, '\\"');
+  escaped = escaped.replace(/%/g, "%%");
+  return needsQuotes ? `"${escaped}"` : escaped;
+}
+
+/**
+ * Resolve Windows command target and whether it needs cmd.exe wrapping.
+ * Bare command names are resolved with `where` to detect .exe vs .cmd/.bat.
+ */
+function resolveWindowsSpawnTarget(command: string): { target: string; useCmdWrapper: boolean } {
+  const explicitExt = path.extname(command).toLowerCase();
+  if (WINDOWS_CMD_SCRIPT_EXTENSIONS.has(explicitExt)) {
+    return { target: command, useCmdWrapper: true };
+  }
+  if (WINDOWS_NATIVE_EXECUTABLE_EXTENSIONS.has(explicitExt)) {
+    return { target: command, useCmdWrapper: false };
+  }
+
+  if (command.includes("\\") || command.includes("/") || command.includes(":")) {
+    return { target: command, useCmdWrapper: false };
+  }
+
+  try {
+    const whereOutput = execSync(`where ${command}`, {
+      encoding: "utf-8",
+      timeout: LSOF_TIMEOUT_MS,
+    });
+    const candidates = whereOutput
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    const nativeMatch = candidates.find((candidate) =>
+      WINDOWS_NATIVE_EXECUTABLE_EXTENSIONS.has(path.extname(candidate).toLowerCase())
+    );
+    if (nativeMatch) {
+      return { target: nativeMatch, useCmdWrapper: false };
+    }
+
+    const scriptMatch = candidates.find((candidate) =>
+      WINDOWS_CMD_SCRIPT_EXTENSIONS.has(path.extname(candidate).toLowerCase())
+    );
+    if (scriptMatch) {
+      return { target: scriptMatch, useCmdWrapper: true };
+    }
+
+    if (candidates.length > 0) {
+      return { target: candidates[0], useCmdWrapper: false };
+    }
+  } catch {
+    // Fall through to original command if where lookup fails.
+  }
+
+  return { target: command, useCmdWrapper: false };
+}
+
+function spawnWindowsCommand(commandArgs: string[], env?: NodeJS.ProcessEnv) {
+  const [command, ...args] = commandArgs;
+  const { target, useCmdWrapper } = resolveWindowsSpawnTarget(command);
+
+  if (!useCmdWrapper) {
+    return spawn(target, args, {
+      stdio: "inherit",
+      env,
+    });
+  }
+
+  const comspec = process.env.ComSpec || "cmd.exe";
+  const commandLine = [target, ...args].map(quoteForWindowsCmd).join(" ");
+  return spawn(comspec, ["/d", "/s", "/c", commandLine], {
+    stdio: "inherit",
+    env,
+  });
+}
+
 /**
  * Spawn a command with proper signal forwarding, error handling, and exit
  * code propagation. Optionally runs a cleanup callback on exit/error/signal.
@@ -321,12 +433,13 @@ export function spawnCommand(
     onCleanup?: () => void;
   }
 ): void {
-  const child = spawn(commandArgs[0], commandArgs.slice(1), {
-    stdio: "inherit",
-    env: options?.env,
-    // On Windows, use shell: true so .cmd scripts resolve correctly
-    ...(process.platform === "win32" ? { shell: true } : {}),
-  });
+  const child =
+    process.platform === "win32"
+      ? spawnWindowsCommand(commandArgs, options?.env)
+      : spawn(commandArgs[0], commandArgs.slice(1), {
+          stdio: "inherit",
+          env: options?.env,
+        });
 
   let exiting = false;
 

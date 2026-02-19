@@ -4,8 +4,8 @@ import * as net from "node:net";
 import type { ProxyServerOptions } from "./types.js";
 import { escapeHtml, formatUrl } from "./utils.js";
 
-/** Response header used to identify a portless proxy (for health checks). */
-export const PORTLESS_HEADER = "X-Portless";
+/** Response header used to identify a trulocal proxy (for health checks). */
+export const PORTLESS_HEADER = "X-trulocal";
 
 /**
  * HTTP/1.1 hop-by-hop headers that are forbidden in HTTP/2 responses.
@@ -90,7 +90,7 @@ export function createProxyServer(options: ProxyServerOptions): ProxyServer {
       res.writeHead(404, { "Content-Type": "text/html" });
       res.end(`
         <html>
-          <head><title>portless - Not Found</title></head>
+          <head><title>trulocal - Not Found</title></head>
           <body style="font-family: system-ui; padding: 40px; max-width: 600px; margin: 0 auto;">
             <h1>Not Found</h1>
             <p>No app registered for <strong>${safeHost}</strong></p>
@@ -104,7 +104,7 @@ export function createProxyServer(options: ProxyServerOptions): ProxyServer {
             `
                 : "<p><em>No apps running.</em></p>"
             }
-            <p>Start an app with: <code>portless ${safeHost.replace(".localhost", "")} your-command</code></p>
+            <p>Start an app with: <code>trulocal ${safeHost.replace(".localhost", "")} your-command</code></p>
           </body>
         </html>
       `);

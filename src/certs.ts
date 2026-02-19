@@ -33,8 +33,8 @@ const SERVER_VALIDITY_DAYS = 365;
 /** Buffer (in ms) subtracted from expiry to trigger early regeneration. */
 const EXPIRY_BUFFER_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
-/** Common Name used for the portless local CA. */
-const CA_COMMON_NAME = "portless Local CA";
+/** Common Name used for the trulocal local CA. */
+const CA_COMMON_NAME = "trulocal Local CA";
 
 /** openssl command timeout (ms). */
 const OPENSSL_TIMEOUT_MS = 15_000;
@@ -268,7 +268,7 @@ export function ensureCerts(stateDir: string): {
 }
 
 /**
- * Check if the portless CA is already installed in the system trust store.
+ * Check if the trulocal CA is already installed in the system trust store.
  */
 export function isCATrusted(stateDir: string): boolean {
   const caCertPath = path.join(stateDir, CA_CERT_FILE);
@@ -337,7 +337,7 @@ function loginKeychainPath(): string {
  * Fedora/RHEL use /etc/pki/ca-trust/source/anchors/ which is not supported yet.
  */
 function isCATrustedLinux(stateDir: string): boolean {
-  const systemCertPath = `/usr/local/share/ca-certificates/portless-ca.crt`;
+  const systemCertPath = `/usr/local/share/ca-certificates/trulocal-ca.crt`;
   if (!fileExists(systemCertPath)) return false;
 
   // Compare our CA with the installed one
@@ -358,7 +358,7 @@ function isCATrustedWindows(caCertPath: string): boolean {
   try {
     // Get the subject from our CA cert
     const subjectOutput = openssl(["x509", "-in", caCertPath, "-noout", "-subject"]).trim();
-    // Format: subject=CN = portless Local CA
+    // Format: subject=CN = trulocal Local CA
     const match = subjectOutput.match(/CN\s*=\s*(.+)/);
     if (!match) return false;
     const commonName = match[1].trim();
@@ -576,7 +576,7 @@ export function createSNICallback(
 }
 
 /**
- * Add the portless CA to the system trust store.
+ * Add the trulocal CA to the system trust store.
  *
  * On macOS, adds to the login keychain (no sudo required -- the OS shows a
  * GUI authorization prompt to confirm). On Linux, copies to
@@ -599,7 +599,7 @@ export function trustCA(stateDir: string): { trusted: boolean; error?: string } 
       );
       return { trusted: true };
     } else if (process.platform === "linux") {
-      const dest = "/usr/local/share/ca-certificates/portless-ca.crt";
+      const dest = "/usr/local/share/ca-certificates/trulocal-ca.crt";
       fs.copyFileSync(caCertPath, dest);
       execFileSync("update-ca-certificates", [], { stdio: "pipe", timeout: 30_000 });
       return { trusted: true };
@@ -623,7 +623,7 @@ export function trustCA(stateDir: string): { trusted: boolean; error?: string } 
       const hint =
         process.platform === "win32"
           ? "Permission denied. Run as Administrator"
-          : "Permission denied. Try: sudo portless trust";
+          : "Permission denied. Try: sudo trulocal trust";
       return {
         trusted: false,
         error: hint,
