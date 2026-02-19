@@ -1,5 +1,7 @@
 # trulocal
 
+Attribution: trulocal is a rebrand/adaptation of the original portless project by Vercel Labs.
+
 Replace port numbers with stable, named .localhost URLs. For humans and agents.
 
 ```diff
