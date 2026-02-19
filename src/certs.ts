@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
 import * as tls from "node:tls";
@@ -38,6 +39,43 @@ const CA_COMMON_NAME = "trulocal Local CA";
 
 /** openssl command timeout (ms). */
 const OPENSSL_TIMEOUT_MS = 15_000;
+
+const OPENSSL_FALLBACK_CONFIG = path.join(os.tmpdir(), "trulocal-openssl.cnf");
+
+const OPENSSL_FALLBACK_CONFIG_CONTENT = [
+  "# Minimal config used by trulocal when system OpenSSL config is missing",
+  "[ req ]",
+  "distinguished_name = req_distinguished_name",
+  "prompt = no",
+  "[ req_distinguished_name ]",
+  "CN = trulocal",
+].join("\n");
+
+function ensureOpenSslFallbackConfig(): string {
+  try {
+    if (!fs.existsSync(OPENSSL_FALLBACK_CONFIG)) {
+      fs.writeFileSync(OPENSSL_FALLBACK_CONFIG, `${OPENSSL_FALLBACK_CONFIG_CONTENT}\n`, {
+        mode: 0o644,
+      });
+    }
+  } catch {
+    // If this fails, openssl will continue with its own config resolution.
+  }
+  return OPENSSL_FALLBACK_CONFIG;
+}
+
+/**
+ * Build a clean environment for openssl child processes.
+ * Some Windows setups export OPENSSL_CONF to a missing file, which causes
+ * every openssl invocation to fail even when openssl itself is installed.
+ */
+function getOpenSslEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  env.OPENSSL_CONF = ensureOpenSslFallbackConfig();
+  delete env.OPENSSL_CONF_INCLUDE;
+  delete env.OPENSSL_MODULES;
+  return env;
+}
 
 // ---------------------------------------------------------------------------
 // File names
@@ -86,6 +124,7 @@ function openssl(args: string[], options?: { input?: string }): string {
       timeout: OPENSSL_TIMEOUT_MS,
       input: options?.input,
       stdio: ["pipe", "pipe", "pipe"],
+      env: getOpenSslEnv(),
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -107,6 +146,7 @@ async function opensslAsync(args: string[]): Promise<string> {
     const { stdout } = await execFileAsync("openssl", args, {
       encoding: "utf-8",
       timeout: OPENSSL_TIMEOUT_MS,
+      env: getOpenSslEnv(),
     });
     return stdout;
   } catch (err: unknown) {
