@@ -52,11 +52,11 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/vercel-labs/trulocal.git"
+    "url": "https://github.com/HenkDz/trulocal.git"
   },
-  "homepage": "https://github.com/vercel-labs/trulocal#readme",
+  "homepage": "https://github.com/HenkDz/trulocal#readme",
   "bugs": {
-    "url": "https://github.com/vercel-labs/trulocal/issues"
+    "url": "https://github.com/HenkDz/trulocal/issues"
   },
   "dependencies": {
     "chalk": "^5.3.0"
