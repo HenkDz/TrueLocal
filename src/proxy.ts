@@ -20,6 +20,9 @@ const HOP_BY_HOP_HEADERS = new Set([
   "upgrade",
 ]);
 
+/** Backend host used for local app forwarding. */
+const BACKEND_HOST = "localhost";
+
 /**
  * Get the effective host value from a request.
  * HTTP/2 uses the :authority pseudo-header; HTTP/1.1 uses Host.
@@ -123,25 +126,26 @@ export function createProxyServer(options: ProxyServerOptions): ProxyServer {
       }
     }
 
-    const proxyReq = http.request(
-      {
-        hostname: "127.0.0.1",
-        port: route.port,
-        path: req.url,
-        method: req.method,
-        headers: proxyReqHeaders,
-      },
-      (proxyRes) => {
-        const responseHeaders: http.OutgoingHttpHeaders = { ...proxyRes.headers };
-        if (isTls) {
-          for (const h of HOP_BY_HOP_HEADERS) {
-            delete responseHeaders[h];
-          }
+    const requestOptions: http.RequestOptions = {
+      hostname: BACKEND_HOST,
+      port: route.port,
+      path: req.url,
+      method: req.method,
+      headers: proxyReqHeaders,
+    };
+    (requestOptions as http.RequestOptions & { autoSelectFamily?: boolean }).autoSelectFamily =
+      true;
+
+    const proxyReq = http.request(requestOptions, (proxyRes) => {
+      const responseHeaders: http.OutgoingHttpHeaders = { ...proxyRes.headers };
+      if (isTls) {
+        for (const h of HOP_BY_HOP_HEADERS) {
+          delete responseHeaders[h];
         }
-        res.writeHead(proxyRes.statusCode || 502, responseHeaders);
-        proxyRes.pipe(res);
       }
-    );
+      res.writeHead(proxyRes.statusCode || 502, responseHeaders);
+      proxyRes.pipe(res);
+    });
 
     proxyReq.on("error", (err) => {
       onError(`Proxy error for ${getRequestHost(req)}: ${err.message}`);
@@ -194,13 +198,18 @@ export function createProxyServer(options: ProxyServerOptions): ProxyServer {
       }
     }
 
-    const proxyReq = http.request({
-      hostname: "127.0.0.1",
+    const upgradeRequestOptions: http.RequestOptions = {
+      hostname: BACKEND_HOST,
       port: route.port,
       path: req.url,
       method: req.method,
       headers: proxyReqHeaders,
-    });
+    };
+    (
+      upgradeRequestOptions as http.RequestOptions & { autoSelectFamily?: boolean }
+    ).autoSelectFamily = true;
+
+    const proxyReq = http.request(upgradeRequestOptions);
 
     proxyReq.on("upgrade", (proxyRes, proxySocket, proxyHead) => {
       // Forward the backend's actual 101 response including Sec-WebSocket-Accept,

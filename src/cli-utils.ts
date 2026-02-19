@@ -112,6 +112,7 @@ export function getDefaultPort(): number {
 export function resolveStateDir(port: number): string {
   const envDir = readFirstEnv(["TRUELOCAL_STATE_DIR", "PORTLESS_STATE_DIR"]);
   if (envDir) return envDir;
+  if (process.platform === "win32") return USER_STATE_DIR;
   return port < PRIVILEGED_PORT_THRESHOLD ? SYSTEM_STATE_DIR : USER_STATE_DIR;
 }
 
