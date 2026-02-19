@@ -62,9 +62,48 @@ function getPortCheckCommand(port: number): string {
  */
 function getKillCommand(pid?: number | string): string {
   if (isWindows) {
-    return pid ? `taskkill /PID ${pid} /F` : "taskkill /PID <pid> /F";
+    return pid ? `taskkill /PID ${pid} /T /F` : "taskkill /PID <pid> /T /F";
   }
   return pid ? `kill ${pid}` : `kill "$(lsof -ti tcp:<port>)"`;
+}
+
+/**
+ * Best-effort process termination with platform-specific behavior.
+ * On Windows we use taskkill to reliably terminate detached processes.
+ */
+function terminateProcess(pid: number): void {
+  if (isWindows) {
+    const result = spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], {
+      encoding: "utf-8",
+      timeout: 10_000,
+    });
+
+    if (result.status !== 0) {
+      const stderr = `${result.stderr || ""} ${result.stdout || ""}`.toLowerCase();
+      if (stderr.includes("access is denied")) {
+        const err = new Error("Permission denied") as NodeJS.ErrnoException;
+        err.code = "EPERM";
+        throw err;
+      }
+      if (stderr.includes("not found") || stderr.includes("no running instance")) {
+        return;
+      }
+      throw new Error((result.stderr || result.stdout || "taskkill failed").trim());
+    }
+    return;
+  }
+
+  process.kill(pid, "SIGTERM");
+}
+
+async function waitForProxyStop(port: number, tls: boolean, attempts = 20): Promise<boolean> {
+  for (let i = 0; i < attempts; i++) {
+    if (!(await isProxyRunning(port, tls))) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -205,7 +244,10 @@ async function stopProxy(store: RouteStore, proxyPort: number, tls: boolean): Pr
       const pid = findPidOnPort(proxyPort);
       if (pid !== null) {
         try {
-          process.kill(pid, "SIGTERM");
+          terminateProcess(pid);
+          if (!(await waitForProxyStop(proxyPort, tls))) {
+            throw new Error("process terminated but proxy port is still active");
+          }
           try {
             fs.unlinkSync(store.portFilePath);
           } catch {
@@ -291,7 +333,18 @@ async function stopProxy(store: RouteStore, proxyPort: number, tls: boolean): Pr
       return;
     }
 
-    process.kill(pid, "SIGTERM");
+    terminateProcess(pid);
+    if (!(await waitForProxyStop(proxyPort, tls))) {
+      // PID file can be stale or the listener may have moved to another process.
+      const activePid = findPidOnPort(proxyPort);
+      if (activePid !== null && activePid !== pid) {
+        terminateProcess(activePid);
+      }
+      if (!(await waitForProxyStop(proxyPort, tls))) {
+        throw new Error(`proxy still listening on port ${proxyPort}`);
+      }
+    }
+
     fs.unlinkSync(pidPath);
     try {
       fs.unlinkSync(store.portFilePath);
