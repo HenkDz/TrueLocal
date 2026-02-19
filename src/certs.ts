@@ -11,8 +11,10 @@ const CA_VALIDITY_DAYS = 3650;
 /**
  * When running under sudo, fix file ownership so the real user can
  * read/write the file later without sudo. No-op when not running as root.
+ * No-op on Windows (doesn't have SUDO_UID).
  */
 function fixOwnership(...paths: string[]): void {
+  if (process.platform === "win32") return;
   const uid = process.env.SUDO_UID;
   const gid = process.env.SUDO_GID;
   if (!uid || process.getuid?.() !== 0) return;
@@ -276,6 +278,8 @@ export function isCATrusted(stateDir: string): boolean {
     return isCATrustedMacOS(caCertPath);
   } else if (process.platform === "linux") {
     return isCATrustedLinux(stateDir);
+  } else if (process.platform === "win32") {
+    return isCATrustedWindows(caCertPath);
   }
   return false;
 }
@@ -341,6 +345,32 @@ function isCATrustedLinux(stateDir: string): boolean {
     const ours = fs.readFileSync(path.join(stateDir, CA_CERT_FILE), "utf-8").trim();
     const installed = fs.readFileSync(systemCertPath, "utf-8").trim();
     return ours === installed;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check if the CA is trusted on Windows.
+ * Checks if the certificate is in the Root certificate store.
+ */
+function isCATrustedWindows(caCertPath: string): boolean {
+  try {
+    // Get the subject from our CA cert
+    const subjectOutput = openssl(["x509", "-in", caCertPath, "-noout", "-subject"]).trim();
+    // Format: subject=CN = portless Local CA
+    const match = subjectOutput.match(/CN\s*=\s*(.+)/);
+    if (!match) return false;
+    const commonName = match[1].trim();
+
+    // Check if a cert with this subject exists in the Root store
+    const result = execFileSync("certutil", ["-store", "Root", commonName], {
+      encoding: "utf-8",
+      timeout: 5000,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    // If certutil finds the cert, it returns successfully
+    return result.includes(commonName);
   } catch {
     return false;
   }
@@ -573,6 +603,13 @@ export function trustCA(stateDir: string): { trusted: boolean; error?: string } 
       fs.copyFileSync(caCertPath, dest);
       execFileSync("update-ca-certificates", [], { stdio: "pipe", timeout: 30_000 });
       return { trusted: true };
+    } else if (process.platform === "win32") {
+      // On Windows, use certutil to add the CA to the Root store
+      execFileSync("certutil", ["-addstore", "-user", "Root", caCertPath], {
+        stdio: "pipe",
+        timeout: 30_000,
+      });
+      return { trusted: true };
     }
     return { trusted: false, error: `Unsupported platform: ${process.platform}` };
   } catch (err: unknown) {
@@ -580,11 +617,16 @@ export function trustCA(stateDir: string): { trusted: boolean; error?: string } 
     if (
       message.includes("authorization") ||
       message.includes("permission") ||
-      message.includes("EACCES")
+      message.includes("EACCES") ||
+      message.includes("Administrator")
     ) {
+      const hint =
+        process.platform === "win32"
+          ? "Permission denied. Run as Administrator"
+          : "Permission denied. Try: sudo portless trust";
       return {
         trusted: false,
-        error: "Permission denied. Try: sudo portless trust",
+        error: hint,
       };
     }
     return { trusted: false, error: message };

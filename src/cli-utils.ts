@@ -19,7 +19,8 @@ export const DEFAULT_PROXY_PORT = 1355;
 export const PRIVILEGED_PORT_THRESHOLD = 1024;
 
 /** System-wide state directory (used when proxy needs sudo). */
-export const SYSTEM_STATE_DIR = "/tmp/portless";
+export const SYSTEM_STATE_DIR =
+  process.platform === "win32" ? path.join(os.tmpdir(), "portless") : "/tmp/portless";
 
 /** Per-user state directory (used when proxy runs without sudo). */
 export const USER_STATE_DIR = path.join(os.homedir(), ".portless");
@@ -257,18 +258,34 @@ export function isProxyRunning(port: number, tls = false): Promise<boolean> {
 
 /**
  * Try to find the PID of a process listening on the given TCP port.
- * Uses lsof, which is available on macOS and most Linux distributions.
+ * Uses lsof on Unix-like systems (macOS/Linux), netstat on Windows.
  * Returns null if the PID cannot be determined.
  */
 export function findPidOnPort(port: number): number | null {
   try {
-    const output = execSync(`lsof -ti tcp:${port} -sTCP:LISTEN`, {
-      encoding: "utf-8",
-      timeout: LSOF_TIMEOUT_MS,
-    });
-    // lsof may return multiple PIDs (one per line); take the first
-    const pid = parseInt(output.trim().split("\n")[0], 10);
-    return isNaN(pid) ? null : pid;
+    if (process.platform === "win32") {
+      // On Windows, use netstat to find processes listening on the port
+      const output = execSync(`netstat -ano | findstr :${port} | findstr LISTENING`, {
+        encoding: "utf-8",
+        timeout: LSOF_TIMEOUT_MS,
+      });
+      // netstat output format: TCP    0.0.0.0:PORT    0.0.0.0:0    LISTENING    PID
+      // The PID is the last column
+      const lines = output.trim().split("\n");
+      if (lines.length === 0) return null;
+      const parts = lines[0].trim().split(/\s+/);
+      const pid = parseInt(parts[parts.length - 1], 10);
+      return isNaN(pid) ? null : pid;
+    } else {
+      // On Unix-like systems (macOS, Linux), use lsof
+      const output = execSync(`lsof -ti tcp:${port} -sTCP:LISTEN`, {
+        encoding: "utf-8",
+        timeout: LSOF_TIMEOUT_MS,
+      });
+      // lsof may return multiple PIDs (one per line); take the first
+      const pid = parseInt(output.trim().split("\n")[0], 10);
+      return isNaN(pid) ? null : pid;
+    }
   } catch {
     return null;
   }
@@ -307,6 +324,8 @@ export function spawnCommand(
   const child = spawn(commandArgs[0], commandArgs.slice(1), {
     stdio: "inherit",
     env: options?.env,
+    // On Windows, use shell: true so .cmd scripts resolve correctly
+    ...(process.platform === "win32" ? { shell: true } : {}),
   });
 
   let exiting = false;

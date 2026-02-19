@@ -81,7 +81,7 @@ PORTLESS=0 pnpm dev   # Bypasses proxy, uses default port
 2. `portless <name> <cmd>` assigns a random free port (4000-4999) via the `PORT` env var and registers the app with the proxy
 3. The browser hits `http://<name>.localhost:1355` on the proxy port; the proxy forwards to the app's assigned port
 
-`.localhost` domains resolve to `127.0.0.1` natively on macOS and Linux -- no `/etc/hosts` editing needed.
+`.localhost` domains resolve to `127.0.0.1` natively on macOS, Linux, and Windows 10/11 -- no `/etc/hosts` editing needed.
 
 Most frameworks (Next.js, Vite, Express, etc.) respect the `PORT` env var automatically.
 
@@ -89,8 +89,9 @@ Most frameworks (Next.js, Vite, Express, etc.) respect the `PORT` env var automa
 
 Portless stores its state (routes, PID file, port file) in a directory that depends on the proxy port:
 
-- **Port < 1024** (sudo required): `/tmp/portless`
-- **Port >= 1024** (no sudo): `~/.portless`
+- **Unix (macOS/Linux), Port < 1024** (sudo required): `/tmp/portless`
+- **Unix (macOS/Linux), Port >= 1024** (no sudo): `~/.portless`
+- **Windows**: `%TEMP%\portless` or `%USERPROFILE%\.portless` (same logic applies)
 
 Override with the `PORTLESS_STATE_DIR` environment variable.
 
@@ -157,7 +158,7 @@ Some frameworks need explicit configuration to use the `PORT` env var. Examples:
 
 ### Permission errors
 
-Ports below 1024 require `sudo`. The default port (1355) does not need sudo. If you want to use port 80:
+**On Unix (macOS/Linux)**: Ports below 1024 require `sudo`. The default port (1355) does not need sudo. If you want to use port 80:
 
 ```bash
 sudo portless proxy start -p 80       # Port 80, requires sudo
@@ -165,18 +166,58 @@ portless proxy start                   # Port 1355, no sudo needed
 portless proxy stop                    # Stop (use sudo if started with sudo)
 ```
 
+**On Windows**: Privileged port restrictions don't apply the same way. Port 80 can typically be used without Administrator privileges.
+
 ### Browser shows certificate warning with --https
 
 The local CA may not be trusted yet. Run:
+
+**On Unix (macOS/Linux)**:
 
 ```bash
 sudo portless trust
 ```
 
+**On Windows**:
+
+```bash
+portless trust  # May prompt for Administrator access
+```
+
 This adds the portless local CA to your system trust store. After that, restart the browser.
+
+### Finding what's using a port
+
+**On Unix (macOS/Linux)**:
+
+```bash
+lsof -ti tcp:1355
+```
+
+**On Windows**:
+
+```bash
+netstat -ano | findstr :1355
+```
+
+### Killing a process by PID
+
+**On Unix (macOS/Linux)**:
+
+```bash
+kill <pid>
+# or with sudo if needed
+sudo kill <pid>
+```
+
+**On Windows**:
+
+```bash
+taskkill /PID <pid> /F
+```
 
 ### Requirements
 
 - Node.js 20+
-- macOS or Linux
-- `openssl` (for `--https` cert generation; ships with macOS and most Linux distributions)
+- macOS, Linux, or Windows 10/11
+- `openssl` (for `--https` cert generation; ships with macOS, most Linux distributions, and Git for Windows)
