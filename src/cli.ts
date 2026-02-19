@@ -407,9 +407,9 @@ async function runApp(
 
   // Check if proxy is running, auto-start if possible
   if (!(await isProxyRunning(proxyPort, tls))) {
-    const defaultPort = getDefaultPort();
-    const needsSudo = !isWindows && defaultPort < PRIVILEGED_PORT_THRESHOLD;
     const wantHttps = isHttpsEnvEnabled();
+    const defaultPort = getDefaultPort(wantHttps);
+    const needsSudo = !isWindows && defaultPort < PRIVILEGED_PORT_THRESHOLD;
 
     if (needsSudo) {
       // Privileged port requires sudo -- must prompt interactively
@@ -543,6 +543,7 @@ async function main() {
   // Help
   if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
     const defaultPort = getDefaultPort();
+    const httpsPort = getDefaultPort(true);
     const defaultUrl = formatUrl("myapp.localhost", defaultPort, false);
     const defaultApiUrl = formatUrl("api.myapp.localhost", defaultPort, false);
     const lowPortHint =
@@ -572,10 +573,11 @@ ${chalk.bold("Usage:")}
   ${chalk.cyan("trulocal <name> <cmd>")}            Run your app through the proxy
   ${chalk.cyan("trulocal list")}                    Show active routes
   ${chalk.cyan("trulocal trust")}                   Add local CA to system trust store
+  ${chalk.cyan("trulocal init")}                    Create a local script for monorepos
 
 ${chalk.bold("Examples:")}
   trulocal proxy start                # Start proxy on port ${defaultPort}
-  trulocal proxy start --https        # Start with HTTPS/2 (faster page loads)
+  trulocal proxy start --https        # Start with HTTPS/2 on port ${httpsPort}
   trulocal myapp next dev             # -> ${defaultUrl}
   trulocal api.myapp pnpm start       # -> ${defaultApiUrl}
 
@@ -596,9 +598,11 @@ ${chalk.bold("HTTP/2 + HTTPS:")}
   Use --https for HTTP/2 multiplexing (faster dev server page loads).
   On first use, trulocal generates a local CA and adds it to your
   system trust store. No browser warnings. No sudo required on macOS.
+  If one .localhost hostname warns while another works, restart proxy and
+  run trulocal trust. trulocal issues per-host SNI certs for non-localhost hosts.
 
 ${chalk.bold("Options:")}
-  -p, --port <number>           Port for the proxy to listen on (default: ${defaultPort})
+  -p, --port <number>           Port for the proxy to listen on (HTTP: ${defaultPort}, HTTPS: ${httpsPort})
 ${lowPortOptionHint}
   --https                       Enable HTTP/2 + TLS with auto-generated certs
   --cert <path>                 Use a custom TLS certificate (implies --https)
@@ -646,6 +650,82 @@ ${chalk.bold("Skip trulocal:")}
       }
       process.exit(1);
     }
+    return;
+  }
+
+  // Init command
+  if (args[0] === "init") {
+    const scriptContent = `#!/usr/bin/env node
+/* global process, console */
+
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const projectRoot = path.resolve(__dirname, "..");
+
+const defaultLocalCli = path.resolve(projectRoot, "..", "TrueLocal", "dist", "cli.js");
+const localCliOverride = process.env.TRUELOCAL_LOCAL_CLI;
+const localCliPath = localCliOverride ? path.resolve(localCliOverride) : defaultLocalCli;
+
+const args = process.argv.slice(2);
+
+if (existsSync(localCliPath)) {
+  const child = spawn(process.execPath, [localCliPath, ...args], {
+    stdio: "inherit",
+    cwd: projectRoot,
+    env: process.env,
+  });
+
+  child.on("exit", (code, signal) => {
+    if (signal) {
+      process.kill(process.pid, signal);
+      return;
+    }
+    process.exit(code ?? 1);
+  });
+
+  child.on("error", (err) => {
+    console.error(\`Failed to run local trulocal CLI: \${err.message}\`);
+    process.exit(1);
+  });
+} else {
+  const command = process.platform === "win32" ? "trulocal.cmd" : "trulocal";
+  const child = spawn(command, args, {
+    stdio: "inherit",
+    cwd: projectRoot,
+    env: process.env,
+    shell: process.platform === "win32",
+  });
+
+  child.on("exit", (code, signal) => {
+    if (signal) {
+      process.kill(process.pid, signal);
+      return;
+    }
+    process.exit(code ?? 1);
+  });
+
+  child.on("error", (err) => {
+    console.error(\`Failed to run trulocal from PATH: \${err.message}\`);
+    process.exit(1);
+  });
+}
+`;
+    const scriptsDir = path.join(process.cwd(), "scripts");
+    if (!fs.existsSync(scriptsDir)) {
+      fs.mkdirSync(scriptsDir, { recursive: true });
+    }
+    const scriptPath = path.join(scriptsDir, "trulocal.js");
+    fs.writeFileSync(scriptPath, scriptContent, { mode: 0o755 });
+    console.log(chalk.green(`Created ${scriptPath}`));
+    console.log(chalk.blue("You can now use this script in your package.json:"));
+    console.log(
+      chalk.cyan('  "dev:web:trulocal": "node scripts/trulocal.js myapp bun run dev:web"')
+    );
     return;
   }
 
@@ -741,6 +821,12 @@ ${chalk.bold("Usage: trulocal proxy <command>")}
 
     // Custom cert/key implies HTTPS
     const useHttps = wantHttps || !!(customCertPath && customKeyPath);
+
+    // When HTTPS is enabled and no explicit port was given, switch to the
+    // HTTPS-aware default (443 on Windows) so URLs are clean.
+    if (useHttps && portFlagIndex === -1) {
+      proxyPort = getDefaultPort(true);
+    }
 
     // Resolve state directory based on the port
     const stateDir = resolveStateDir(proxyPort);

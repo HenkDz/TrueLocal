@@ -151,9 +151,11 @@ describe("constants", () => {
 
 describe("getDefaultPort", () => {
   let originalEnv: string | undefined;
+  let originalTruelocalPort: string | undefined;
 
   beforeEach(() => {
     originalEnv = process.env.PORTLESS_PORT;
+    originalTruelocalPort = process.env.TRUELOCAL_PORT;
   });
 
   afterEach(() => {
@@ -161,6 +163,11 @@ describe("getDefaultPort", () => {
       delete process.env.PORTLESS_PORT;
     } else {
       process.env.PORTLESS_PORT = originalEnv;
+    }
+    if (originalTruelocalPort === undefined) {
+      delete process.env.TRUELOCAL_PORT;
+    } else {
+      process.env.TRUELOCAL_PORT = originalTruelocalPort;
     }
   });
 
@@ -190,5 +197,17 @@ describe("getDefaultPort", () => {
   it("returns DEFAULT_PROXY_PORT when PORTLESS_PORT is empty", () => {
     process.env.PORTLESS_PORT = "";
     expect(getDefaultPort()).toBe(DEFAULT_PROXY_PORT);
+  });
+
+  it("returns 443 on Windows when https=true and no env override", () => {
+    delete process.env.PORTLESS_PORT;
+    delete process.env.TRUELOCAL_PORT;
+    const expected = process.platform === "win32" ? 443 : DEFAULT_PROXY_PORT;
+    expect(getDefaultPort(true)).toBe(expected);
+  });
+
+  it("returns env port even when https=true", () => {
+    process.env.TRUELOCAL_PORT = "8443";
+    expect(getDefaultPort(true)).toBe(8443);
   });
 });

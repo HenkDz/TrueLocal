@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
-import * as tls from "node:tls";
+import type { SecureContext } from "node:tls";
 import { createSNICallback, ensureCerts, isCATrusted, trustCA } from "./certs.js";
 
 describe("ensureCerts", () => {
@@ -127,7 +127,7 @@ describe("createSNICallback", () => {
 
   it("returns default context for localhost", async () => {
     const sniCallback = createSNICallback(tmpDir, defaultCert, defaultKey);
-    const ctx = await new Promise<tls.SecureContext | undefined>((resolve, reject) => {
+    const ctx = await new Promise<SecureContext | undefined>((resolve, reject) => {
       sniCallback("localhost", (err, ctx) => {
         if (err) reject(err);
         else resolve(ctx);
@@ -137,21 +137,29 @@ describe("createSNICallback", () => {
     expect(ctx).toBeDefined();
   });
 
-  it("returns default context for simple *.localhost subdomains", async () => {
+  it("generates per-hostname cert for simple *.localhost subdomains", async () => {
     const sniCallback = createSNICallback(tmpDir, defaultCert, defaultKey);
-    const ctx = await new Promise<tls.SecureContext | undefined>((resolve, reject) => {
-      sniCallback("myapp.localhost", (err, ctx) => {
+    const hostname = "myapp.localhost";
+
+    const ctx = await new Promise<SecureContext | undefined>((resolve, reject) => {
+      sniCallback(hostname, (err, ctx) => {
         if (err) reject(err);
         else resolve(ctx);
       });
     });
 
     expect(ctx).toBeDefined();
+
+    const hostCertPath = path.join(tmpDir, "host-certs", "myapp_localhost.pem");
+    expect(fs.existsSync(hostCertPath)).toBe(true);
+
+    const cert = new crypto.X509Certificate(fs.readFileSync(hostCertPath));
+    expect(cert.subjectAltName).toContain(`DNS:${hostname}`);
   });
 
   it("generates per-hostname cert for deep subdomains", async () => {
     const sniCallback = createSNICallback(tmpDir, defaultCert, defaultKey);
-    const ctx = await new Promise<tls.SecureContext | undefined>((resolve, reject) => {
+    const ctx = await new Promise<SecureContext | undefined>((resolve, reject) => {
       sniCallback("chat.myapp.localhost", (err, ctx) => {
         if (err) reject(err);
         else resolve(ctx);
@@ -172,14 +180,14 @@ describe("createSNICallback", () => {
   it("caches generated certs in memory on subsequent calls", async () => {
     const sniCallback = createSNICallback(tmpDir, defaultCert, defaultKey);
 
-    const ctx1 = await new Promise<tls.SecureContext | undefined>((resolve, reject) => {
+    const ctx1 = await new Promise<SecureContext | undefined>((resolve, reject) => {
       sniCallback("deep.sub.localhost", (err, ctx) => {
         if (err) reject(err);
         else resolve(ctx);
       });
     });
 
-    const ctx2 = await new Promise<tls.SecureContext | undefined>((resolve, reject) => {
+    const ctx2 = await new Promise<SecureContext | undefined>((resolve, reject) => {
       sniCallback("deep.sub.localhost", (err, ctx) => {
         if (err) reject(err);
         else resolve(ctx);

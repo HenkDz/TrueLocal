@@ -87,15 +87,19 @@ function readFirstEnv(names: string[]): string | undefined {
 
 /**
  * Return the effective default proxy port. Reads TRUELOCAL_PORT first,
- * then legacy PORTLESS_PORT.
- * first, falling back to DEFAULT_PROXY_PORT (1355).
+ * then legacy PORTLESS_PORT, falling back to a platform default.
+ *
+ * On Windows (no privileged-port restriction), returns 80 for HTTP and
+ * 443 for HTTPS so that URLs are clean (no port suffix). On Unix the
+ * default is always 1355 regardless of TLS mode.
  */
-export function getDefaultPort(): number {
+export function getDefaultPort(https = false): number {
   const envPort = readFirstEnv(["TRUELOCAL_PORT", "PORTLESS_PORT"]);
   if (envPort) {
     const port = parseInt(envPort, 10);
     if (!isNaN(port) && port >= 1 && port <= 65535) return port;
   }
+  if (process.platform === "win32" && https) return 443;
   return DEFAULT_PROXY_PORT;
 }
 
@@ -200,7 +204,7 @@ export async function discoverState(): Promise<{ dir: string; port: number; tls:
   }
 
   // Nothing running; fall back based on default port
-  const defaultPort = getDefaultPort();
+  const defaultPort = getDefaultPort(isHttpsEnvEnabled());
   return { dir: resolveStateDir(defaultPort), port: defaultPort, tls: false };
 }
 

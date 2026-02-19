@@ -217,8 +217,9 @@ function generateServerCert(stateDir: string): { certPath: string; keyPath: stri
   // Generate server private key
   openssl(["ecparam", "-genkey", "-name", "prime256v1", "-noout", "-out", serverKeyPath]);
 
-  // Generate CSR
-  openssl(["req", "-new", "-key", serverKeyPath, "-out", csrPath, "-subj", "/CN=localhost"]);
+  // Generate CSR. Some TLS inspection tools still key off CN instead of SAN,
+  // so use a wildcard CN to match app.localhost hostnames.
+  openssl(["req", "-new", "-key", serverKeyPath, "-out", csrPath, "-subj", "/CN=*.localhost"]);
 
   // Write extension config for SANs
   fs.writeFileSync(
@@ -518,21 +519,14 @@ async function generateHostCertAsync(
 }
 
 /**
- * Check if a hostname matches `*.localhost` (single-level subdomain).
- * These are covered by the default server cert's wildcard SAN.
- */
-function isSimpleLocalhostSubdomain(hostname: string): boolean {
-  const parts = hostname.split(".");
-  // "foo.localhost" => ["foo", "localhost"] => 2 parts
-  return parts.length === 2 && parts[1] === "localhost";
-}
-
-/**
  * Create an SNI callback for the TLS server.
  *
- * For simple hostnames matching `*.localhost`, uses the default server cert.
- * For deeper subdomains (e.g., `chat.myapp.localhost`), generates a
+ * Uses the default certificate only for literal `localhost`.
+ * For all other hostnames (including `foo.localhost`), generates a
  * per-hostname certificate on demand, signed by the local CA, and caches it.
+ *
+ * Some browsers apply stricter name checks for wildcard localhost certs,
+ * so exact-host SAN certificates are more reliable.
  *
  * Certificate generation is async to avoid blocking the event loop. A
  * pending-promise map deduplicates concurrent requests for the same hostname.
@@ -549,8 +543,8 @@ export function createSNICallback(
   const defaultCtx = tls.createSecureContext({ cert: defaultCert, key: defaultKey });
 
   return (servername: string, cb: (err: Error | null, ctx?: tls.SecureContext) => void) => {
-    // Simple subdomains (foo.localhost) and "localhost" itself are covered by the default cert
-    if (servername === "localhost" || isSimpleLocalhostSubdomain(servername)) {
+    // Keep localhost on the default certificate.
+    if (servername === "localhost") {
       cb(null, defaultCtx);
       return;
     }
@@ -584,8 +578,12 @@ export function createSNICallback(
 
     // If a generation is already in flight for this hostname, wait for it
     if (pending.has(servername)) {
-      pending
-        .get(servername)!
+      const existing = pending.get(servername);
+      if (!existing) {
+        cb(new Error(`Pending certificate promise missing for ${servername}`));
+        return;
+      }
+      existing
         .then((ctx) => cb(null, ctx))
         .catch((err) => cb(err instanceof Error ? err : new Error(String(err))));
       return;

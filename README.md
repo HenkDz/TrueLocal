@@ -72,6 +72,24 @@ trulocal docs.myapp next dev
 
 The proxy auto-starts when you run an app. Or start it explicitly: `trulocal proxy start`.
 
+### Monorepos
+
+For monorepos, you can generate a local script that ensures `trulocal` is used consistently across all apps:
+
+```bash
+trulocal init
+```
+
+This creates `scripts/trulocal.js`. You can then use it in your `package.json` scripts:
+
+```json
+{
+  "scripts": {
+    "dev:web:trulocal": "node scripts/trulocal.js myapp bun run dev:web"
+  }
+}
+```
+
 ## How It Works
 
 ```mermaid
@@ -88,7 +106,7 @@ flowchart TD
 
 1. **Start the proxy** -- auto-starts when you run an app, or start explicitly with `trulocal proxy start`
 2. **Run apps** -- `trulocal <name> <command>` assigns a free port and registers with the proxy
-3. **Access via URL** -- `http://<name>.localhost` on Windows (default port 80), or `http://<name>.localhost:1355` on macOS/Linux
+3. **Access via URL** -- `http://<name>.localhost` on Windows (default port 80), or `http://<name>.localhost:1355` on macOS/Linux. With `--https`, Windows defaults to port 443 for clean `https://` URLs.
 
 Apps are assigned a random port (4000-4999) via the `PORT` environment variable. Most frameworks (Next.js, Vite, etc.) respect this automatically.
 
@@ -120,20 +138,21 @@ sudo trulocal trust
 trulocal <name> <cmd> [args...]  # Run app at http://<name>.localhost (Windows) or :1355 (Unix)
 trulocal list                    # Show active routes
 trulocal trust                   # Add local CA to system trust store
+trulocal init                    # Create a local script for monorepos
 
 # Disable trulocal (run command directly)
 TRUELOCAL=0 pnpm dev             # Bypasses proxy, uses default port
 # Also accepts TRUELOCAL=skip
 
 # Proxy control
-trulocal proxy start             # Start proxy (Windows default: 80, Unix default: 1355)
-trulocal proxy start --https     # Start with HTTP/2 + TLS
+trulocal proxy start             # Start proxy (Windows HTTP: 80, HTTPS: 443; Unix: 1355)
+trulocal proxy start --https     # Start with HTTP/2 + TLS (Windows: port 443)
 trulocal proxy start -p 80       # Start on port 80 (Unix may require sudo)
 trulocal proxy start --foreground  # Start in foreground (for debugging)
 trulocal proxy stop              # Stop the proxy
 
 # Options
--p, --port <number>              # Port for the proxy (default: 80 on Windows, 1355 on Unix)
+-p, --port <number>              # Port for the proxy (Windows HTTP:80/HTTPS:443, Unix: 1355)
                                  # On Unix, ports < 1024 require sudo
 --https                          # Enable HTTP/2 + TLS with auto-generated certs
 --cert <path>                    # Use a custom TLS certificate (implies --https)
@@ -162,6 +181,30 @@ trulocal stores its state (routes, PID file, port file) in a directory that depe
 
 Override with `TRUELOCAL_STATE_DIR` (or legacy `PORTLESS_STATE_DIR`) if needed.
 
+## HTTPS Troubleshooting
+
+### One hostname works, another shows "Not private"
+
+If `https://api.myapp.localhost` works but `https://myapp.localhost` shows a privacy warning, the issue is usually hostname/SAN mismatch, stale cert cache, or stale proxy state.
+
+Use this checklist:
+
+```bash
+# 1) Restart proxy cleanly
+trulocal proxy stop
+trulocal proxy start --https
+
+# 2) Inspect served cert for the failing hostname
+openssl s_client -connect 127.0.0.1:443 -servername myapp.localhost 2>/dev/null | openssl x509 -noout -subject -ext subjectAltName
+
+# 3) Re-trust the local CA (safe to re-run)
+trulocal trust
+```
+
+Expected: SAN output includes the exact hostname (for example `DNS:myapp.localhost`).
+
+Implementation detail: trulocal generates per-host SNI certificates for all non-`localhost` hostnames. This avoids browser edge cases with wildcard `*.localhost` matching and applies to any app name.
+
 ## Requirements
 
 - Node.js 20+
@@ -171,7 +214,7 @@ Override with `TRUELOCAL_STATE_DIR` (or legacy `PORTLESS_STATE_DIR`) if needed.
 
 ### Windows
 
-- **Default no-port URL**: `trulocal proxy start` listens on port 80 by default, so apps are available as `http://myapp.localhost` (no `:port` suffix).
+- **Default no-port URL**: `trulocal proxy start` listens on port 80 by default, so apps are available as `http://myapp.localhost` (no `:port` suffix). With `--https`, the default switches to port 443 for clean `https://myapp.localhost` URLs.
 - **No sudo required**: Windows doesn't enforce privileged port restrictions like Unix systems. Port 80 can be used without Administrator privileges in most cases.
 - **Command prompt differences**: Where Unix uses `sudo`, Windows uses "Run as Administrator". Where Unix uses `lsof`, Windows uses `netstat -ano`. Where Unix uses `kill`, Windows uses `taskkill /PID <pid> /F`.
 - **Certificate trust**: The `trulocal trust` command uses `certutil` to add the CA to the Windows certificate store. This may prompt for Administrator access.

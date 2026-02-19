@@ -68,6 +68,24 @@ trulocal api.myapp pnpm start    # Windows: http://api.myapp.localhost
 trulocal docs.myapp next dev     # macOS/Linux: http://docs.myapp.localhost:1355
 ```
 
+### Monorepos
+
+For monorepos, you can generate a local script that ensures `trulocal` is used consistently across all apps:
+
+```bash
+trulocal init
+```
+
+This creates `scripts/trulocal.js`. You can then use it in your `package.json` scripts:
+
+```json
+{
+  "scripts": {
+    "dev:web:trulocal": "node scripts/trulocal.js myapp bun run dev:web"
+  }
+}
+```
+
 ### Bypassing trulocal
 
 Set `TRUELOCAL=0` or `TRUELOCAL=skip` to run the command directly without the proxy (legacy `PORTLESS=...` also works):
@@ -78,7 +96,7 @@ TRUELOCAL=0 pnpm dev   # Bypasses proxy, uses default port
 
 ## How It Works
 
-1. `trulocal proxy start` starts an HTTP reverse proxy as a background daemon (default: port 80 on Windows, port 1355 on macOS/Linux; configurable with `-p` / `--port` or `TRUELOCAL_PORT`). The proxy also auto-starts when you run an app.
+1. `trulocal proxy start` starts an HTTP reverse proxy as a background daemon (default: port 80 on Windows, port 1355 on macOS/Linux; with `--https` on Windows, defaults to 443; configurable with `-p` / `--port` or `TRUELOCAL_PORT`). The proxy also auto-starts when you run an app.
 2. `trulocal <name> <cmd>` assigns a random free port (4000-4999) via the `PORT` env var and registers the app with the proxy
 3. The browser hits `http://<name>.localhost` on Windows (default 80) or `http://<name>.localhost:1355` on macOS/Linux; the proxy forwards to the app's assigned port
 
@@ -125,7 +143,8 @@ First run generates a local CA and prompts for sudo to add it to the system trus
 | `trulocal <name> <cmd> [args...]`   | Run app at `http://<name>.localhost` (Windows default) or `:1355` on macOS/Linux |
 | `trulocal list`                     | Show active routes                                                               |
 | `trulocal trust`                    | Add local CA to system trust store (for HTTPS)                                   |
-| `trulocal proxy start`              | Start the proxy as a daemon (Windows: 80, macOS/Linux: 1355)                     |
+| `trulocal init`                     | Create a local script for monorepos                                              |
+| `trulocal proxy start`              | Start the proxy as a daemon (Windows HTTP:80/HTTPS:443, macOS/Linux: 1355)       |
 | `trulocal proxy start --https`      | Start with HTTP/2 + TLS (auto-generates certs)                                   |
 | `trulocal proxy start -p <number>`  | Start the proxy on a custom port                                                 |
 | `trulocal proxy start --foreground` | Start the proxy in foreground (for debugging)                                    |
@@ -187,6 +206,29 @@ trulocal trust  # May prompt for Administrator access
 ```
 
 This adds the trulocal local CA to your system trust store. After that, restart the browser.
+
+### One hostname works over HTTPS but another fails
+
+Symptom example: `https://api.myapp.localhost` works, but `https://myapp.localhost` shows "Not private".
+
+Likely causes:
+
+- Hostname SAN mismatch on the served certificate
+- Stale proxy/cert state
+- CA trust state not refreshed in browser/OS
+
+Recommended sequence:
+
+```bash
+trulocal proxy stop
+trulocal proxy start --https
+openssl s_client -connect 127.0.0.1:443 -servername myapp.localhost 2>/dev/null | openssl x509 -noout -subject -ext subjectAltName
+trulocal trust
+```
+
+Pass condition: SAN includes the exact failing hostname (for example `DNS:myapp.localhost`).
+
+Implementation note: trulocal uses per-host SNI cert generation for all non-`localhost` hostnames, so this behavior/fix is general and not app-specific.
 
 ### Finding what's using a port
 
